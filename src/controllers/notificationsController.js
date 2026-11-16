@@ -1,0 +1,13 @@
+import { Notification, FcmDevice, SavedPlace, Review, Ride, AuditLog } from "../models/index.js";
+import { wrap, positive, fail, num } from "../utils/http.js";
+import { notify } from "../services/fcm.js";
+
+export const list =wrap(async(req,res)=>res.json(await Notification.findAll({where:{userId:req.user.id},order:[['id','DESC']],limit:100})));
+export const read =wrap(async(req,res)=>{const n=await Notification.findOne({where:{id:positive(req.params.id),userId:req.user.id}});if(!n)fail(404,'Notification not found');await n.update({readAt:new Date()});res.json(n)});
+export const registerDevice =wrap(async(req,res)=>{if(!req.body.token||String(req.body.token).length>512)fail(400,'Valid FCM token required');let [d]=await FcmDevice.findOrCreate({where:{token:req.body.token},defaults:{userId:req.user.id,platform:req.body.platform||'web'}});if(d.userId!==req.user.id)await d.update({userId:req.user.id,platform:req.body.platform||'web'});res.json({ok:true})});
+export const send =wrap(async(req,res)=>{const userId=positive(req.body.userId);await notify(userId,String(req.body.title||'Periyar Taxi').slice(0,180),String(req.body.body||''),req.body.data||{});res.json({sent:true})});
+export const places =wrap(async(req,res)=>res.json(await SavedPlace.findAll({where:{userId:req.user.id},limit:100})));
+export const addPlace =wrap(async(req,res)=>{const data={userId:req.user.id,label:String(req.body.label||'Favorite'),address:String(req.body.address||''),lat:Number(req.body.lat),lng:Number(req.body.lng)};if(!Number.isFinite(data.lat)||!Number.isFinite(data.lng))fail(400,'Valid coordinates required');res.status(201).json(await SavedPlace.create(data))});
+export const deletePlace =wrap(async(req,res)=>{const deleted=await SavedPlace.destroy({where:{id:positive(req.params.id),userId:req.user.id}});if(!deleted)fail(404,'Favorite not found');res.json({success:true})});
+export const review =wrap(async(req,res)=>{const ride=await Ride.findOne({where:{id:positive(req.params.id),customerId:req.user.id,status:'COMPLETED'}});if(!ride)fail(404,'Completed trip not found');const rating=num(req.body.rating,'rating',1);if(!Number.isInteger(rating)||rating>5)fail(400,'Rating must be 1–5');const [r,created]=await Review.findOrCreate({where:{rideId:ride.id},defaults:{customerId:req.user.id,rating,comment:String(req.body.comment||'').slice(0,2000)}});if(!created)fail(409,'Already reviewed');res.status(201).json(r)});
+export const audit =wrap(async(req,res)=>{const where=req.user.role==='ADMIN'?{actorId:req.user.id}:{};res.json(await AuditLog.findAll({where,order:[['id','DESC']],limit:200}))});

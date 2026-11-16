@@ -1,0 +1,37 @@
+{
+  "name": "periyar-taxi-api",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Periyar Taxi API (native ES modules)",
+  "scripts": {
+    "start": "node scripts/preflight.js && node server.js",
+    "dev": "node scripts/preflight.js && node --watch server.js",
+    "db:init": "node scripts/preflight.js && node scripts/initDb.js",
+    "db:seed": "node scripts/preflight.js && node scripts/seed.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check.js",
+    "db:migrate-driver": "node scripts/preflight.js && node scripts/migrateDriverOnboarding.js",
+    "db:migrate-fleet": "node scripts/preflight.js && node scripts/migrateFleet.js",
+    "db:migrate-trip-timing": "node scripts/preflight.js && node scripts/migrateTripTiming.js"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "firebase-admin": "^13.0.2",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.12.0",
+    "razorpay": "^2.9.6",
+    "sequelize": "^6.37.7",
+    "socket.io": "^4.8.1",
+    "zod": "^3.24.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {},
+  "type": "module"
+}

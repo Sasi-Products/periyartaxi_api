@@ -1,0 +1,14 @@
+import _pkg_sequelize from "sequelize";
+import { Assignment, Vehicle, User, DriverProfile, DriverShift } from "../models/index.js";
+import { wrap, fail, positive } from "../utils/http.js";
+import { branchGuard } from "../middleware/auth.js";
+import { audit } from "../services/audit.js";
+const {Op} = _pkg_sequelize;
+export const list =wrap(async(req,res)=>{let where={};if(req.user.role==='DRIVER')where.driverId=req.user.id;else if(req.user.role==='ADMIN')where.branchId=req.user.branchId;else if(req.query.branchId)where.branchId=positive(req.query.branchId);res.json(await Assignment.findAll({where,order:[['startsAt','DESC']],limit:500}))});
+export const create =wrap(async(req,res)=>{const driverId=positive(req.body.driverId,'driver'),vehicleId=positive(req.body.vehicleId,'vehicle'),startsAt=new Date(req.body.startsAt),endsAt=new Date(req.body.endsAt);if(!Number.isFinite(startsAt.getTime())||!Number.isFinite(endsAt.getTime())||startsAt>=endsAt)fail(400,'Valid assignment period required');
+ const d=await User.findByPk(driverId),v=await Vehicle.findByPk(vehicleId),p=await DriverProfile.findOne({where:{userId:driverId}});
+ if(!d||d.role!=='DRIVER'||!v||d.branchId!==v.branchId)fail(422,'Driver and vehicle must belong to the same branch');branchGuard(req,d.branchId);if(p?.verification!=='APPROVED'||v.verification!=='APPROVED'||!v.active)fail(422,'Driver and vehicle must be approved');
+ const overlap={active:true,startsAt:{[Op.lt]:endsAt},endsAt:{[Op.gt]:startsAt}};
+ if(await Assignment.count({where:{...overlap,[Op.or]:[{driverId},{vehicleId}]}}))fail(409,'Driver or vehicle already assigned during this period');
+ const a=await Assignment.create({driverId,vehicleId,branchId:d.branchId,startsAt,endsAt});await audit(req,'ASSIGNMENT_CREATED','Assignment',a.id);res.status(201).json(a)});
+export const disable =wrap(async(req,res)=>{const a=await Assignment.findByPk(positive(req.params.id));if(!a)fail(404,'Assignment not found');branchGuard(req,a.branchId);await a.update({active:false});await audit(req,'ASSIGNMENT_DISABLED','Assignment',a.id);res.json(a)});

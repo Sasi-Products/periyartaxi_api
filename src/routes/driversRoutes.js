@@ -1,0 +1,23 @@
+import express from 'express';
+import * as controller from '../controllers/driversController.js';
+import { auth, role, adminOnly } from '../middleware/auth.js';
+import { driverDocumentUpload } from '../services/driverFiles.js';
+
+const router = express.Router();
+router.use(auth);
+router.get('/', adminOnly('drivers.manage'), controller.list);
+router.post('/onboard', adminOnly('drivers.manage'), driverDocumentUpload, controller.onboard);
+router.get('/me', role('DRIVER'), controller.profile);
+router.patch('/me', role('DRIVER'), controller.updateProfile);
+router.post('/me/documents', role('DRIVER'), driverDocumentUpload, controller.uploadDocuments);
+router.get('/me/documents/:key', role('DRIVER'), controller.viewDocument);
+router.post('/submit', role('DRIVER'), controller.submit);
+router.patch('/availability', role('DRIVER'), controller.availability);
+router.get('/live', adminOnly('locations.view'), controller.live);
+router.get('/:id', adminOnly('drivers.manage'), controller.profile);
+router.patch('/:id', adminOnly('drivers.manage'), controller.updateProfile);
+router.post('/:id/documents', adminOnly('drivers.manage'), driverDocumentUpload, controller.uploadDocuments);
+router.get('/:id/documents/:key', controller.viewDocument);
+router.post('/:id/submit', adminOnly('drivers.manage'), controller.submit);
+router.post('/:id/verify', adminOnly('drivers.verify'), controller.verify);
+export default router;

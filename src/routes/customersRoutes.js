@@ -1,0 +1,15 @@
+import express from 'express';
+import * as c from '../controllers/customersController.js';
+import { auth, adminOnly } from '../middleware/auth.js';
+import rateLimit from 'express-rate-limit';
+const router = express.Router();
+router.use(auth);
+router.get('/', adminOnly('customers.view'), c.list);
+router.get('/lookup', rateLimit({windowMs:15*60_000,limit:15,standardHeaders:'draft-7',legacyHeaders:false}), adminOnly('customers.view'), c.lookup);
+router.get('/unlinked', adminOnly('customers.view'), c.unlinked);
+router.post('/', adminOnly('customers.manage'), c.create);
+router.get('/:id/rides', adminOnly('customers.view'), c.rides);
+router.post('/:id/link-ride', adminOnly('customers.manage'), c.linkRide);
+router.get('/:id', adminOnly('customers.view'), c.one);
+router.patch('/:id', adminOnly('customers.manage'), c.update);
+export default router;
