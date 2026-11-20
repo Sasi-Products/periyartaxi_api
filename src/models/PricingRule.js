@@ -5,6 +5,7 @@ export default (sequelize) => {
  PricingRule.init({
   branchId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
   service: {type: DataTypes.STRING(32), allowNull: false},
+  vehicleType: {type: DataTypes.STRING(40), allowNull: false, defaultValue: 'ALL'},
   config: {type: DataTypes.JSON, allowNull: false},
   version: {type: DataTypes.INTEGER, defaultValue: 1},
   active: {type: DataTypes.BOOLEAN, defaultValue: true}

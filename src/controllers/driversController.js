@@ -2,18 +2,19 @@ import bcrypt from 'bcryptjs';
 import SequelizePkg from 'sequelize';
 const { Op } = SequelizePkg;
 import {
-  sequelize, Branch, User, DriverProfile, DriverShift, DriverLocation,
+  sequelize, Branch, User, DriverProfile, DriverShift, DriverLocation, DriverMonthlyMark, Ride, RideDriver, Review,
 } from '../models/index.js';
 import { wrap, fail, positive, num } from '../utils/http.js';
 import { mobile } from '../utils/validate.js';
-import { branchGuard } from '../middleware/auth.js';
+import { branchGuard,hasPermission } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import {
   REQUIRED_DRIVER_DOCS, DRIVER_DOC_KEYS, saveDriverDocuments,
   removeDriverDocuments, driverDocumentLinks, sendDriverDocument,
 } from '../services/driverFiles.js';
 
-const salaryTypes = ['MONTHLY', 'DAILY', 'PER_TRIP', 'HOURLY'];
+const salaryTypes = ['MONTHLY', 'WEEKLY', 'DAILY'];
+const LANGUAGES = ['Tamil','English','Hindi','Malayalam','Kannada','Telugu','Urdu','Other'];
 const employmentKinds = ['PERMANENT', 'ACTING'];
 const text = (v, max = 200) => String(v ?? '').trim().slice(0, max);
 const optional = (v, max = 200) => text(v, max) || null;
@@ -59,9 +60,9 @@ function selectedProfileFields(body, { isDriver = false } = {}) {
     'permanentAddress','temporaryAddress','emergencyName','emergencyMobile',
     'emergencyRelation','bloodGroup','languages','referenceName','referenceMobile',
     'onboardingNote','backgroundCheckStatus','backgroundCheckDate',
-    'kind','salaryType','salaryRate',
+    'kind','salaryType','salaryRate','overtimeRate','emergencyContacts','rentCapabilities',
   ];
-  const selfRestricted = ['backgroundCheckStatus','backgroundCheckDate','onboardingNote','kind','salaryType','salaryRate','joinedOn'];
+  const selfRestricted = ['backgroundCheckStatus','backgroundCheckDate','onboardingNote','kind','salaryType','salaryRate','overtimeRate','adminEnabled','joinedOn'];
   const result = {};
   for (const field of fields) {
     if (body[field] === undefined || (isDriver && selfRestricted.includes(field))) continue;
@@ -71,11 +72,27 @@ function selectedProfileFields(body, { isDriver = false } = {}) {
     else if (field === 'aadhaarLast4') {
       if (v && !/^\d{4}$/.test(String(v))) fail(400, 'Aadhaar: last four digits only');
       result[field] = v || null;
-    } else if (['homeLat','homeLng','experienceYears','salaryRate'].includes(field)) {
+    } else if (['homeLat','homeLng','experienceYears','salaryRate','overtimeRate'].includes(field)) {
       if (v === '' || v == null) result[field] = null;
       else result[field] = num(v, field);
     } else if (['emergencyMobile','referenceMobile'].includes(field)) result[field] = v ? mobile(v) : null;
-    else if (field === 'salaryType') {
+    else if (field === 'emergencyContacts') {
+      let contacts = v; if (typeof contacts === 'string') { try { contacts = JSON.parse(contacts); } catch { fail(400,'Invalid emergency contacts'); } }
+      if (!Array.isArray(contacts)) fail(400,'Emergency contacts must be a list');
+      result[field] = contacts.map((c,i) => {
+        const name = text(c?.name,140), relation = text(c?.relation,60), phone = mobile(c?.mobile);
+        if (!name || !relation || !phone) fail(400,`Complete emergency contact ${i+1}`);
+        return {name,mobile:phone,relation};
+      });
+    } else if (field === 'rentCapabilities') {
+      let caps=v; if(typeof caps==='string'){try{caps=JSON.parse(caps)}catch{fail(400,'Invalid driver rent capabilities')}}
+      if(!Array.isArray(caps)||caps.some(c=>!['MANUAL','AUTOMATIC','LUXURY'].includes(c))) fail(400,'Choose valid driver rent capabilities');
+      result[field]=[...new Set(caps)];
+    } else if (field === 'languages') {
+      const list=Array.isArray(v)?v:String(v||'').split(',').map(x=>x.trim()).filter(Boolean);
+      if(list.length>12||list.some(x=>!LANGUAGES.includes(x)))fail(400,'Choose known languages');
+      result.languages=[...new Set(list)].join(', ');
+    } else if (field === 'salaryType') {
       if (!salaryTypes.includes(v)) fail(400, 'Invalid salary type');
       result[field] = v;
     } else if (field === 'kind') {
@@ -86,6 +103,7 @@ function selectedProfileFields(body, { isDriver = false } = {}) {
       result[field] = v;
     } else result[field] = optional(v, field === 'onboardingNote' ? 2000 : 160);
   }
+  if (result.salaryRate < 0 || result.overtimeRate < 0) fail(400,'Salary and overtime rate cannot be negative');
   if (result.experienceYears != null && result.experienceYears > 75) fail(400, 'Invalid driving experience');
   if (result.homeLat != null && result.homeLat > 90) fail(400, 'Invalid home latitude');
   if (result.homeLng != null && result.homeLng > 180) fail(400, 'Invalid home longitude');
@@ -101,8 +119,7 @@ async function findDriver(req, param = req.params.id) {
     if (user.id !== req.user.id) fail(403, 'Access denied');
   } else {
     if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) fail(403, 'Access denied');
-    if (req.user.role === 'ADMIN' && !Array.isArray(req.user.permissions)) fail(403, 'Missing drivers.manage permission');
-    if (req.user.role === 'ADMIN' && !req.user.permissions.includes('drivers.manage')) fail(403, 'Missing drivers.manage permission');
+    if (req.user.role === 'ADMIN' && !hasPermission(req.user,'drivers.manage')) fail(403, 'Missing drivers.manage permission');
     branchGuard(req, user.branchId);
   }
   const profile = await DriverProfile.findOne({ where: { userId } });
@@ -142,8 +159,12 @@ export const onboard = wrap(async (req, res) => {
   const kind = body.kind || 'PERMANENT';
   if (!employmentKinds.includes(kind)) fail(400, 'Invalid employment type');
   const values = selectedProfileFields(body);
+  if(values.salaryType && !salaryTypes.includes(values.salaryType)) fail(400,'Invalid driver salary type');
   if (!values.permanentAddress) fail(400, 'Permanent address required');
-  if (!values.emergencyName || !values.emergencyMobile || !values.emergencyRelation) fail(400, 'Emergency contact, mobile and relationship are required');
+  if (!values.emergencyContacts?.length && (!values.emergencyName || !values.emergencyMobile || !values.emergencyRelation)) fail(400, 'At least one emergency contact is required');
+  if (values.emergencyContacts?.length) {
+    values.emergencyName=values.emergencyContacts[0].name;values.emergencyMobile=values.emergencyContacts[0].mobile;values.emergencyRelation=values.emergencyContacts[0].relation;
+  }
   if (!values.licenseNumber || !values.licenseExpiry) fail(400, 'Driving license number and expiry required');
   if (!values.joinedOn) fail(400, 'Joining date required');
   if (!values.dateOfBirth || values.dateOfBirth > new Date(Date.now() - 18 * 365.2425 * 86400000).toISOString().slice(0, 10)) {
@@ -166,7 +187,7 @@ export const onboard = wrap(async (req, res) => {
       const profileData = {
         ...values, userId: user.id, kind, available: false,
         employeeCode: `PTD-${String(user.id).padStart(5, '0')}`,
-        salaryType: values.salaryType || 'MONTHLY', salaryRate: values.salaryRate ?? 0,
+        salaryType: values.salaryType || 'MONTHLY', salaryRate: values.salaryRate ?? 0, overtimeRate: values.overtimeRate ?? 0, adminEnabled: true,
         documents: driverDocumentLinks(user.id, stored), documentFiles: stored,
         verification: hasRequiredDocs ? 'PENDING' : 'NOT_SUBMITTED',
       };
@@ -254,6 +275,7 @@ export const verify = wrap(async (req, res) => {
       fail(422, 'Valid license, masked Aadhaar and driver photo are required');
     }
     if (p.backgroundCheckStatus === 'FLAGGED') fail(422, 'Resolve flagged background check before approval');
+    if(p.joinedOn&&!p.documents?.signedAgreement)fail(422,'Signed Periyar Taxi driver agreement is required for approval');
   }
   await p.update({
     verification: approved ? 'APPROVED' : 'REJECTED',
@@ -264,9 +286,19 @@ export const verify = wrap(async (req, res) => {
   await audit(req, 'DRIVER_VERIFICATION', 'DriverProfile', p.id, null, { approved });
   res.json(p);
 });
+export const adminAvailability = wrap(async (req,res) => {
+  const { user,profile } = await findDriver(req);
+  if(typeof req.body.adminEnabled !== 'boolean') fail(400,'adminEnabled must be true/false');
+  await profile.update({ adminEnabled: req.body.adminEnabled, available: req.body.adminEnabled ? profile.available : false });
+  if(!req.body.adminEnabled) await DriverShift.update({active:false,endsAt:new Date()},{where:{driverId:user.id,active:true}});
+  await audit(req,'DRIVER_ADMIN_AVAILABILITY','DriverProfile',profile.id,null,{adminEnabled:profile.adminEnabled});
+  res.json({driverId:user.id,adminEnabled:profile.adminEnabled,available:profile.available});
+});
 export const availability = wrap(async (req, res) => {
   const p = await DriverProfile.findOne({ where: { userId: req.user.id } });
   if (!p || p.verification !== 'APPROVED') fail(403, 'Driver is not approved');
+  const currentProfile=await DriverProfile.findOne({where:{userId:req.user.id}});
+  if(!currentProfile?.adminEnabled) fail(403,'Driver disabled for duty by admin');
   const shift = await DriverShift.findOne({ where: { driverId: req.user.id, active: true }, order: [['id', 'DESC']] });
   if (!shift) fail(422, 'Clock in before marking available');
   await p.update({ available: !!req.body.available });
@@ -277,4 +309,26 @@ export const live = wrap(async (req, res) => {
   const where = branchId ? { branchId: positive(branchId) } : {};
   const rows = await DriverLocation.findAll({ where });
   res.json(rows.filter((x) => Date.now() - new Date(x.reportedAt).getTime() < Number(process.env.LOCATION_STALE_SECONDS || 120) * 1000));
+});
+
+const markFields=['punctuality','customerService','safety','vehicleCare','attendance'];
+export const monthlyMarks=wrap(async(req,res)=>{
+ const {user}=await findDriver(req);
+ const marks=await DriverMonthlyMark.findAll({where:{driverId:user.id},order:[['month','DESC']],limit:36});
+ const month=String(req.query.month||new Date().toISOString().slice(0,7));
+ if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))fail(400,'Invalid month');
+ const ids=(await RideDriver.findAll({where:{driverId:user.id},attributes:['rideId']})).map(r=>r.rideId);
+ const completed=ids.length?await Ride.findAll({where:{id:ids,status:'COMPLETED'},attributes:['id','endedAt']}):[];
+ const tripIds=completed.filter(r=>r.endedAt&&new Date(r.endedAt).toISOString().startsWith(month)).map(r=>r.id);
+ const reviews=tripIds.length?await Review.findAll({where:{rideId:tripIds}}):[];
+ res.json({marks,evidence:{month,completedTrips:tripIds.length,reviewCount:reviews.length,customerRating:reviews.length?Number((reviews.reduce((a,r)=>a+Number(r.rating||0),0)/reviews.length).toFixed(2)):null}});
+});
+export const saveMonthlyMarks=wrap(async(req,res)=>{
+ const {user}=await findDriver(req);const month=String(req.body.month||'');
+ if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))fail(400,'Month must be YYYY-MM');
+ const scores={};for(const key of markFields){const score=Number(req.body[key]);if(!Number.isInteger(score)||score<0||score>5)fail(400,`${key}: 0 to 5 required`);scores[key]=score;}
+ const total=Number((Object.values(scores).reduce((a,b)=>a+b,0)/5).toFixed(2));
+ const [row]=await DriverMonthlyMark.findOrCreate({where:{driverId:user.id,month},defaults:{...scores,total,month,driverId:user.id,branchId:user.branchId,notes:text(req.body.notes,1000),markedBy:req.user.id}});
+ await row.update({...scores,total,notes:text(req.body.notes,1000),markedBy:req.user.id});
+ await audit(req,'DRIVER_MONTHLY_MARK','DriverMonthlyMark',row.id,null,{driverId:user.id,month,total});res.json(row);
 });

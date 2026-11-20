@@ -13,12 +13,22 @@ if (process.env.NODE_ENV === 'production' && process.env.OTP_DEV_MODE === 'true'
 }
 const server = http.createServer(app);
 configure(server);
-try {
+
+async function startServer() {
   await sequelize.authenticate();
-  console.log('MySQL connected');
-  server.listen(Number(process.env.PORT || 8080), () => console.log(`Periyar Taxi API on port ${process.env.PORT || 8080}`));
+  console.log("MySQL connected");
+
+  const port = Number(process.env.PORT || 8080);
+
+  server.listen(port, () => {
+    console.log(`Periyar Taxi API on port ${port}`);
+  });
+
   startDispatchWorker();
-} catch (error) {
-  console.error('Startup failed:', error);
-  process.exitCode = 1;
 }
+
+startServer().catch((error) => {
+  console.error("Startup failed:", error);
+  process.exit(1);
+});
+

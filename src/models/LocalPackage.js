@@ -5,6 +5,7 @@ export default (sequelize) => {
  LocalPackage.init({
   branchId: {type: DataTypes.INTEGER.UNSIGNED, allowNull: false},
   name: {type: DataTypes.STRING(120), allowNull: false},
+  vehicleType: {type: DataTypes.STRING(40), allowNull: false, defaultValue: 'ALL'},
   hours: {type: DataTypes.FLOAT, allowNull: false},
   kms: {type: DataTypes.FLOAT, allowNull: false},
   baseFare: {type: DataTypes.DECIMAL(12,2), allowNull: false},

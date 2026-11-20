@@ -13,7 +13,7 @@ import { audit } from "../services/audit.js";
 import { branchGuard, hasPermission } from "../middleware/auth.js";
 import { mobile as checkMobile } from "../utils/validate.js";
 import { scopedCustomer, findCustomerByPhone, sameMobile } from "../services/customerAccess.js";
-import { Vehicle } from '../models/index.js';
+import { Vehicle,DriverProfile } from '../models/index.js';
 import { eligibleDrivers } from '../services/dispatch.js';
 const {Op} = _pkg_sequelize;
 
@@ -68,7 +68,14 @@ export const create = wrap(async (req, res) => {
     service: result.estimate.service,
     tripMode: req.body.tripMode || 'ONE_WAY',
     packageId: req.body.packageId || null,
-    vehicleType: req.body.vehicleType || null,
+    vehicleType: service==='DRIVER_RENT'?req.body.customerVehicle?.category:(req.body.vehicleType || null),
+    customerVehicle: service==='DRIVER_RENT'?{
+      category:String(req.body.customerVehicle?.category||''),
+      brand:String(req.body.customerVehicle?.brand||'').trim().slice(0,90),
+      model:String(req.body.customerVehicle?.model||'').trim().slice(0,90),
+      registration:String(req.body.customerVehicle?.registration||'').trim().slice(0,30),
+      notes:String(req.body.customerVehicle?.notes||'').trim().slice(0,500),
+    }:null,
     requiredDrivers,
     pickup: req.body.pickup,
     dropoff: req.body.dropoff || null,
@@ -113,6 +120,7 @@ export const one =wrap(async(req,res)=>{const ride=await Ride.findByPk(positive(
 export const offers =wrap(async(req,res)=>{res.json(await RideOffer.findAll({where:{driverId:req.user.id,status:'PENDING',expiresAt:{[Op.gt]:new Date()}},order:[['id','DESC']],limit:50}))});
 export const offerResponse =wrap(async(req,res)=>{const result=await respond(positive(req.params.id),req.user.id,!!req.body.accept);res.json({accepted:result.accepted,ride:result.ride})});
 export const manualAssign =wrap(async(req,res)=>{const ride=await Ride.findByPk(positive(req.params.id));if(!ride)fail(404,'Trip not found');branchGuard(req,ride.branchId);if(!['REQUESTED','SEARCHING','OFFERED','NO_DRIVER','ASSIGNED'].includes(ride.status))fail(409,'Cannot assign this trip');const d=await User.findByPk(positive(req.body.driverId));if(!d||d.role!=='DRIVER'||d.branchId!==ride.branchId)fail(422,'Driver not in this branch');
+ if(ride.service==='DRIVER_RENT'){const profile=await DriverProfile.findOne({where:{userId:d.id}});if(!profile||profile.kind!=='ACTING'||!profile.adminEnabled)fail(422,'Driver for Rent requires an active acting driver');if(ride.customerVehicle?.category&&Array.isArray(profile.rentCapabilities)&&profile.rentCapabilities.length&&!profile.rentCapabilities.includes(ride.customerVehicle.category))fail(422,'Acting driver cannot handle this customer vehicle class');}
  const available=(await eligibleDrivers(ride)).find(x=>x.driverId===d.id);if(!available)fail(422,'Driver is not eligible, on shift, verified, or available');
  if(await RideDriver.count({where:{rideId:ride.id,driverId:d.id,status:'ASSIGNED'}}))fail(409,'Already assigned');
  if(await RideDriver.count({where:{rideId:ride.id,status:'ASSIGNED'}})>=ride.requiredDrivers)fail(409,'All required drivers assigned');

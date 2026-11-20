@@ -63,3 +63,8 @@ import makeRideWaitInterval from './RideWaitInterval.js';
 export const RideOtp = makeRideOtp(sequelize);
 export const RideGpsSample = makeRideGpsSample(sequelize);
 export const RideWaitInterval = makeRideWaitInterval(sequelize);
+
+import makeDriverMonthlyMark from './DriverMonthlyMark.js';
+export const DriverMonthlyMark = makeDriverMonthlyMark(sequelize);
+import makeStaffDocument from './StaffDocument.js';
+export const StaffDocument = makeStaffDocument(sequelize);

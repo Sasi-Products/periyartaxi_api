@@ -12,7 +12,8 @@
     "check": "node scripts/check.js",
     "db:migrate-driver": "node scripts/preflight.js && node scripts/migrateDriverOnboarding.js",
     "db:migrate-fleet": "node scripts/preflight.js && node scripts/migrateFleet.js",
-    "db:migrate-trip-timing": "node scripts/preflight.js && node scripts/migrateTripTiming.js"
+    "db:migrate-trip-timing": "node scripts/preflight.js && node scripts/migrateTripTiming.js",
+    "db:migrate-operations": "node scripts/preflight.js && node scripts/migrateOperations2026.js"
   },
   "engines": {
     "node": ">=22.16.0"

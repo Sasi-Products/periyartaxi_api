@@ -17,7 +17,7 @@ function validateConfig(service,config){
  const cfg={...DEFAULTS[service],...config};
  if(service==='LOCAL'){amounts(cfg,['baseKm','baseFare','extraKm','boundaryFee','graceKm','convertAfterKm','waitingPerMinute','waitingGraceMinutes']);if(!cfg.baseKm)fail(400,'baseKm must be positive')}
  if(service==='LOCAL_PACKAGE')amounts(cfg,['boundaryFee','graceKm','convertAfterKm']);
- if(service==='OUTSTATION'){amounts(cfg,['shortThresholdKm','minFare','includedKm','perKm','shortIncludedHours','longIncludedHours','extraHour','oneWayDistanceMultiplier','roundTripDistanceMultiplier']);if(cfg.shortThresholdKm<=cfg.includedKm)fail(400,'Outstation threshold must exceed included KM')}
+ if(service==='OUTSTATION'){cfg.shortPerKm=nonneg(config.shortPerKm??config.perKm??cfg.perKm,'shortPerKm');cfg.longPerKm=nonneg(config.longPerKm??config.perKm??cfg.perKm,'longPerKm');cfg.shortExtraHour=nonneg(config.shortExtraHour??config.extraHour??cfg.extraHour,'shortExtraHour');cfg.longExtraHour=nonneg(config.longExtraHour??config.extraHour??cfg.extraHour,'longExtraHour');amounts(cfg,['shortThresholdKm','minFare','includedKm','perKm','shortIncludedHours','longIncludedHours','extraHour','oneWayDistanceMultiplier','roundTripDistanceMultiplier']);if(cfg.shortThresholdKm<=cfg.includedKm)fail(400,'Outstation threshold must exceed included KM')}
  if(service==='DRIVER_RENT')amounts(cfg,['minimumHours','minimumFare','extraHour']);
  if(service==='VALET')amounts(cfg,['minimumHours','perDriverBaseFare','extraHourPerDriver','maxDrivers']);
  return cfg;
@@ -47,10 +47,11 @@ function quoteFare(input){
  }else if(service==='OUTSTATION'){
    const multiplier=tripMode==='ROUND_TRIP'?cfg.roundTripDistanceMultiplier:cfg.oneWayDistanceMultiplier;
    billedKm=distanceKm*multiplier;
-   if(billedKm<cfg.shortThresholdKm){baseFare=cfg.minFare;extraKmFare=Math.max(0,billedKm-cfg.includedKm)*cfg.perKm;}
-   else{baseFare=billedKm*cfg.perKm;}
-   const includedHours=billedKm<cfg.shortThresholdKm?cfg.shortIncludedHours:cfg.longIncludedHours;
-   extraHourFare=Math.max(0,h-includedHours)*cfg.extraHour;
+   if(billedKm<cfg.shortThresholdKm){baseFare=cfg.minFare;extraKmFare=Math.max(0,billedKm-cfg.includedKm)*cfg.shortPerKm;}
+   else{baseFare=billedKm*cfg.longPerKm;}
+   const short=billedKm<cfg.shortThresholdKm;
+   const includedHours=short?cfg.shortIncludedHours:cfg.longIncludedHours;
+   extraHourFare=Math.max(0,h-includedHours)*(short?cfg.shortExtraHour:cfg.longExtraHour);
    formula=`${tripMode} ${billedKm.toFixed(2)} billable km`;
  }else if(service==='DRIVER_RENT'){
    baseFare=cfg.minimumFare;extraHourFare=Math.max(0,h-cfg.minimumHours)*cfg.extraHour;

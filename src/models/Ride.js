@@ -20,6 +20,7 @@ export default (sequelize) => {
   tripMode: {type: DataTypes.ENUM('ONE_WAY','ROUND_TRIP'),defaultValue:'ONE_WAY'},
   packageId: DataTypes.INTEGER.UNSIGNED,
   vehicleType: DataTypes.STRING(40),
+  customerVehicle: jsonValue('customerVehicle'),
   requiredDrivers: {type: DataTypes.INTEGER, defaultValue:1},
   pickup: {type: DataTypes.JSON,allowNull:false},
   dropoff: DataTypes.JSON,

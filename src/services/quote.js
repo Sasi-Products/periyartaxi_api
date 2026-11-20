@@ -5,8 +5,14 @@ import { quoteFare, DEFAULTS } from "./fare.js";
 import { insidePolygon } from "../utils/geo.js";
 
 
-async function getConfig(branchId,service){const r=await PricingRule.findOne({where:{branchId,service,active:true}});return r?.config||DEFAULTS[service];}
-async function buildQuote(req,{branchId,service,pickup,dropoff,packageId,tripMode,requiredDrivers,hours,forceManualRoute=false,manualDistanceKm,manualDurationMinutes}){
+async function getConfig(branchId,service,vehicleType='ALL'){
+ const rows=await PricingRule.findAll({where:{branchId,service,active:true},order:[['version','DESC'],['id','DESC']]});
+ const selected=rows.find(x=>x.vehicleType===vehicleType)||rows.find(x=>x.vehicleType==='ALL')||rows.find(x=>!x.vehicleType);
+ let config=selected?.config||DEFAULTS[service];
+ if(typeof config==='string'){try{config=JSON.parse(config)}catch{config=DEFAULTS[service]}}
+ return config;
+}
+async function buildQuote(req,{branchId,service,pickup,dropoff,packageId,tripMode,requiredDrivers,hours,forceManualRoute=false,manualDistanceKm,manualDurationMinutes,vehicleType,customerVehicle}){
  const branch=await Branch.findByPk(positive(branchId,'branch ID'));if(!branch||!branch.active)fail(404,'Branch not found');
  if(req.user&&req.user.role!=='SUPER_ADMIN'&&['ADMIN','DRIVER'].includes(req.user.role)&&Number(req.user.branchId)!==branch.id)fail(403,'Branch restricted');
  if(!pickup||typeof pickup.lat!=='number'||typeof pickup.lng!=='number')fail(400,'Pickup coordinates required');
@@ -21,10 +27,16 @@ async function buildQuote(req,{branchId,service,pickup,dropoff,packageId,tripMod
  let packageData=null;
  if(service==='LOCAL_PACKAGE'){
   const pkg=await LocalPackage.findOne({where:{id:positive(packageId,'package ID'),branchId,active:true}});
-  if(!pkg)fail(404,'Active package not found');packageData=pkg.toJSON();
+  if(!pkg)fail(404,'Active package not found');
+  if(pkg.vehicleType && pkg.vehicleType!=='ALL' && pkg.vehicleType!==vehicleType)fail(422,'Package is not for the selected vehicle category');
+  packageData=pkg.toJSON();
  }
- const config=await getConfig(branch.id,service);
- const outstationConfig=await getConfig(branch.id,'OUTSTATION');
+ if(service==='DRIVER_RENT'){
+  if(!customerVehicle || !['MANUAL','AUTOMATIC','LUXURY'].includes(customerVehicle.category)||!String(customerVehicle.brand||'').trim()||!String(customerVehicle.model||'').trim())fail(400,'Customer vehicle brand, model and type required for driver rent');
+ }
+ const category=service==='DRIVER_RENT'?customerVehicle.category:(vehicleType||'ALL');
+ const config=await getConfig(branch.id,service,category);
+ const outstationConfig=await getConfig(branch.id,'OUTSTATION',vehicleType||'ALL');
  const estimate=quoteFare({service,...route,packageData,tripMode,requiredDrivers,hours,config,polygon:branch.polygon||[],outstationConfig});
  return{branchId:branch.id,route,estimate};
 }

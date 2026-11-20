@@ -12,7 +12,9 @@ async function eligibleDrivers(ride){
  const users=await User.findAll({where:{role:'DRIVER',branchId:ride.branchId,active:true}});
  const output=[];
  for(const u of users){
-  const p=await DriverProfile.findOne({where:{userId:u.id,verification:'APPROVED',available:true}});if(!p)continue;
+  const p=await DriverProfile.findOne({where:{userId:u.id,verification:'APPROVED',available:true,adminEnabled:true}});if(!p)continue;
+  if(ride.service==='DRIVER_RENT' && p.kind!=='ACTING')continue;
+  if(ride.service==='DRIVER_RENT' && ride.customerVehicle?.category && Array.isArray(p.rentCapabilities) && p.rentCapabilities.length && !p.rentCapabilities.includes(ride.customerVehicle.category))continue;
   const shift=await DriverShift.findOne({where:{driverId:u.id,active:true}});if(!shift)continue;
   const loc=await DriverLocation.findOne({where:{driverId:u.id}});
   if(!loc||Date.now()-new Date(loc.reportedAt).getTime()>Number(process.env.LOCATION_STALE_SECONDS||120)*1000)continue;

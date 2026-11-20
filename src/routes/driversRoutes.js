@@ -20,4 +20,7 @@ router.post('/:id/documents', adminOnly('drivers.manage'), driverDocumentUpload,
 router.get('/:id/documents/:key', controller.viewDocument);
 router.post('/:id/submit', adminOnly('drivers.manage'), controller.submit);
 router.post('/:id/verify', adminOnly('drivers.verify'), controller.verify);
+router.patch('/:id/admin-availability',adminOnly('drivers.manage'),controller.adminAvailability);
+router.get('/:id/marks',adminOnly('drivers.manage'),controller.monthlyMarks);
+router.put('/:id/marks',adminOnly('drivers.manage'),controller.saveMonthlyMarks);
 export default router;

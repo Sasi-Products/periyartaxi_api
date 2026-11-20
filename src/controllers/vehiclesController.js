@@ -4,7 +4,8 @@ import { branchGuard } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import { storeVehicleMedia, sendVehicleMedia, deleteVehicleMedia, validateMediaKey } from '../services/vehicleFiles.js';
 
-const VEHICLE_TYPES = ['MINI', 'SEDAN', 'SUV', 'SUV_PLUS'];
+import { VEHICLE_CATEGORIES } from '../utils/vehicleCategories.js';
+const VEHICLE_TYPES = VEHICLE_CATEGORIES;
 const OWNERSHIP = ['COMPANY', 'ATTACHED'];
 const STATUS = ['AVAILABLE', 'MAINTENANCE', 'RETIRED'];
 const PHOTO_KEYS = ['front', 'back', 'left', 'right', 'interior1', 'interior2'];
@@ -51,7 +52,7 @@ function sanitize(input, { create = false } = {}) {
   if (create && !body.registration) fail(400, 'Registration number required');
   if (body.registration) body.registration = body.registration.toUpperCase().replace(/\s+/g, ' ');
   if (body.modelYear != null && (body.modelYear < 1980 || body.modelYear > new Date().getFullYear() + 1)) fail(400, 'Invalid model year');
-  if (body.seats != null && (!Number.isInteger(body.seats) || body.seats < 2 || body.seats > 25)) fail(400, 'Invalid seat capacity');
+  if (body.seats != null && (!Number.isInteger(body.seats) || body.seats < 2 || body.seats > 80)) fail(400, 'Invalid seat capacity');
   if (body.chassisLast6 && !/^[a-z0-9]{6}$/i.test(body.chassisLast6)) fail(400, 'Chassis last 6 must contain 6 characters');
   if (body.engineLast6 && !/^[a-z0-9]{6}$/i.test(body.engineLast6)) fail(400, 'Engine last 6 must contain 6 characters');
   return body;
@@ -108,6 +109,7 @@ export const update = wrap(async (req, res) => {
 export const verify = wrap(async (req, res) => {
   const v = await findScoped(req, req.params.id);
   if (req.body.approved === true) {
+    if(v.ownershipType==='ATTACHED' && !v.documents?.attachmentAgreement) fail(422,'Upload signed owner attachment agreement before approval');
     if (!PHOTO_KEYS.every(k => v.photos?.[k]) || !REQUIRED_DOCS.every(k => v.documents?.[k])) fail(422, 'Upload all 6 vehicle photos and RC, insurance, permit, pollution documents');
     checkOwnership(v.toJSON());
     if (v.ownershipType === 'ATTACHED' && !['ownerKyc', 'attachmentAgreement', 'ownerConsent'].every(k => v.documents?.[k])) fail(422, 'Attached vehicles require owner proof, attachment agreement and consent document');

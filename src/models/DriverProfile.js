@@ -20,9 +20,11 @@ export default (sequelize) => {
   homeLat: DataTypes.DOUBLE,
   homeLng: DataTypes.DOUBLE,
   available: {type: DataTypes.BOOLEAN, defaultValue: false},
-  salaryType: {type: DataTypes.ENUM('MONTHLY','DAILY','PER_TRIP','HOURLY'),defaultValue:'MONTHLY'},
+  salaryType: {type: DataTypes.ENUM('MONTHLY','WEEKLY','DAILY','PER_TRIP','HOURLY'),defaultValue:'MONTHLY'},
   salaryRate: {type: DataTypes.DECIMAL(12,2), defaultValue:0},
   ...driverOnboardingFields,
+  emergencyContacts: { ...driverOnboardingFields.emergencyContacts, get() { const value=this.getDataValue('emergencyContacts');if(typeof value==='string'){try{return JSON.parse(value)}catch{return []}}return Array.isArray(value)?value:[] } },
+  rentCapabilities: { ...driverOnboardingFields.rentCapabilities, get() { const value=this.getDataValue('rentCapabilities');if(typeof value==='string'){try{return JSON.parse(value)}catch{return []}}return Array.isArray(value)?value:[] } },
   documentFiles: {
     ...driverOnboardingFields.documentFiles,
     get() { return jsonObject(this.getDataValue('documentFiles')); },
